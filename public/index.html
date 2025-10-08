@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kiosco de Salas – Caballeriza</title>
+  <style>
+    :root{
+      --ok:#22c55e; --busy:#ef4444; --warn:#f59e0b;
+      --bg:#0b1020; --card:#11162a; --card2:#0e1428; --text:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa;
+      --stage-w: 1280px; --stage-h: 800px;
+      --card-h: 210px;              /* altura fija para alinear la grilla */
+      --radius-lg: 16px;
+    }
+
+    html,body{height:100%}
+    body{margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Inter,Arial,sans-serif; overflow:hidden}
+
+    /* Escenario */
+    #stageOuter{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); overflow:hidden}
+    #stage{width:var(--stage-w); height:var(--stage-h); position:relative; display:flex; flex-direction:column; gap:16px; padding:16px; transform-origin: top left; box-sizing: border-box}
+
+    /* Header */
+    header{display:flex; gap:16px; align-items:center; justify-content:space-between}
+    .brand{display:flex; align-items:center; gap:12px}
+    .brand h1{font-size:clamp(18px,3.2vw,28px); margin:0; font-weight:800; letter-spacing:.2px}
+    .legend{display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:14px; color:var(--muted)}
+    .tag{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#172033; border:1px solid #233054}
+    .dot{width:10px; height:10px; border-radius:999px}
+    .dot.ok{background:var(--ok)} .dot.busy{background:var(--busy)} .dot.warn{background:var(--warn)}
+    .controls{display:flex; gap:8px; align-items:center}
+    button, select, input[type="date"]{
+      background:#172033; color:var(--text); border:1px solid #233054; border-radius:10px; padding:8px 12px; cursor:pointer; font-size:14px
+    }
+    button:hover{filter:brightness(1.08)}
+
+    /* Grid */
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+      gap:14px; flex:1; overflow:auto; padding-bottom:12px
+    }
+
+    /* Card */
+    .card{
+      position:relative; display:flex; flex-direction:column; gap:8px;
+      background:linear-gradient(180deg,var(--card), var(--card2) 60%);
+      border:1px solid #1c2442; border-radius:var(--radius-lg);
+      padding:14px; padding-top:52px; height:var(--card-h);
+      box-shadow:0 6px 18px rgba(0,0,0,.20);
+      transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+      overflow:hidden;
+    }
+    .card:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(0,0,0,.28); border-color:#2a3a6b }
+    .statusBar{position:absolute; inset:auto 0 0 0; height:6px}
+    .status-ok{background:var(--ok)} .status-busy{background:var(--busy)} .status-warn{background:var(--warn)} .status-info{background:var(--accent)}
+
+    .busy-badge{
+      position:absolute; top:10px; right:10px; padding:6px 10px; border-radius:999px;
+      background:#172033; font-size:12px; border:1px solid #233054; z-index:2; white-space:nowrap; color:#cdd6e5
+    }
+
+    .room-name{font-size:18px; font-weight:800; padding-right:120px; letter-spacing:.2px}
+    .location{font-size:12px; color:var(--muted)}
+    .time{font-size:13px; line-height:1.25; white-space:nowrap; text-overflow:ellipsis; overflow:hidden}
+    .agenda{
+      margin-top:4px; font-size:12px; color:var(--muted);
+      display:flex; flex-direction:column; gap:3px;
+      max-height:72px; overflow:auto; padding-right:4px;   /* muestra TODO con scroll sin desalinear */
+    }
+    .agenda::-webkit-scrollbar{height:8px;width:8px} .agenda::-webkit-scrollbar-thumb{background:#2a3556;border-radius:8px}
+
+    .meta{margin-top:auto; display:flex; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--muted)}
+    .meta b{color:var(--text)}
+
+    footer{display:flex; justify-content:space-between; align-items:center; gap:10px; color:var(--muted); font-size:13px}
+
+    /* Modal */
+    .modal{position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; padding:16px; z-index:10000}
+    .modal.open{display:flex}
+    .sheet{background:#0b1228; border:1px solid #1c2442; color:var(--text); border-radius:16px; width:min(720px,96%); padding:18px; box-shadow:0 10px 40px rgba(0,0,0,.35); position:relative}
+    .sheet h3{margin:0 0 6px 0; font-weight:800}
+    .sheet .sub{color:var(--muted); font-size:13px}
+    .kv{display:grid; grid-template-columns:150px 1fr; gap:8px; margin-top:10px; font-size:14px}
+    .actions{display:flex; justify-content:flex-end; margin-top:14px}
+    ::-webkit-scrollbar{height:10px;width:10px} ::-webkit-scrollbar-thumb{background:#253052;border-radius:10px}
+  </style>
+</head>
+<body>
+  <div id="stageOuter">
+    <div id="stage">
+      <header>
+        <div class="brand">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 3l9 4.5v9L12 21 3 16.5v-9L12 3z" stroke="#60a5fa" stroke-width="1.5"/></svg>
+          <h1>Salas – Caballeriza</h1>
+          <div class="legend">
+            <span class="tag"><span class="dot ok"></span> Disponible</span>
+            <span class="tag"><span class="dot busy"></span> Reservada</span>
+            <span class="tag"><span class="dot warn"></span> Próx. reunión</span>
+          </div>
+        </div>
+        <div class="controls">
+          <select id="locationFilter"><option value="">Todos los pisos</option></select>
+          <button id="todayBtn">Hoy</button>
+          <button id="tomorrowBtn">Mañana</button>
+          <input type="date" id="datePicker" />
+          <button id="refreshBtn">Actualizar</button>
+          <button id="fullscreenBtn">Pantalla completa</button>
+        </div>
+      </header>
+
+      <section class="grid" id="grid"></section>
+
+      <footer>
+        <div>Última actualización: <span id="lastUpdated">—</span></div>
+        <div>Fecha vista: <span id="viewDateLabel">—</span> | Reloj: <span id="clock">—</span> | Auto-refresh: <span id="intervalLabel">60s</span></div>
+      </footer>
+
+      <!-- Modal -->
+      <div class="modal" id="modal">
+        <div class="sheet">
+          <h3 id="mRoom">Sala</h3>
+          <div class="sub" id="mStatusLine">—</div>
+
+          <div class="kv">
+            <div><b>Ubicación</b></div><div id="mLocation">—</div>
+            <div><b>Capacidad</b></div><div id="mCapacity">—</div>
+            <div><b>Reunión</b></div><div id="mTitle">—</div>
+            <div><b>Horario</b></div><div id="mTime">—</div>
+            <div><b>Asistentes</b></div><div id="mAttendees">—</div>
+            <div><b>Organizador</b></div><div id="mOrganizer">—</div>
+            <div><b>Notas</b></div><div id="mNotes">—</div>
+            <div><b>Actualizado</b></div><div id="mUpdated">—</div>
+          </div>
+
+          <h4 style="margin:12px 0 4px 0">Reservas del <span id="mDayLabel">—</span></h4>
+          <div id="mDayList" class="day-slots"></div>
+
+          <div class="actions"><button id="closeModal">Cerrar</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /** ===== CONFIG (modo por día) ===== */
+    const PROXY_URL = '/api/escritoir/dashboard';
+    const AUTO_REFRESH_MS = 60_000;
+
+    // refs
+    const grid = document.getElementById('grid');
+    const clockEl = document.getElementById('clock');
+    const lastUpdatedEl = document.getElementById('lastUpdated');
+    const intervalLabel = document.getElementById('intervalLabel');
+    const locationFilter = document.getElementById('locationFilter');
+    const datePicker = document.getElementById('datePicker');
+    const viewDateLabel = document.getElementById('viewDateLabel');
+    const todayBtn = document.getElementById('todayBtn');
+    const tomorrowBtn = document.getElementById('tomorrowBtn');
+
+    const TODAY = startOfDay(new Date());
+    let VIEW_DATE = startOfDay(new Date());
+    let ROOMS = [];
+
+    /* ===== Helpers ===== */
+    function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
+    function ymd(d){ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; }
+    function escapeHtml(s=''){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+    /* ===== Fetch (por día) ===== */
+    async function fetchData(){
+      const dateStr = ymd(VIEW_DATE);
+      const url = `${PROXY_URL}?date=${dateStr}`;
+      const res = await fetch(url, { cache:'no-store' });
+      if(!res.ok){
+        const t = await res.text().catch(()=> '');
+        throw new Error('API Escritoir error '+res.status+': '+t);
+      }
+      const payload = await res.json();
+      return adaptEscritoir(payload);
+    }
+
+    // Adaptar [{area, schedules[]}] → items
+    function adaptEscritoir(payload){
+      if (!Array.isArray(payload)) return [];
+      const items = [];
+      for (const r of payload){
+        const area = r?.area || {};
+        const roomName = asText(area?.name) || '(sin sala)';
+        const capacity = Number(area?.max_occupancy || 0);
+        const location = deriveLocationFromName(roomName);
+        const schedules = Array.isArray(r?.schedules) ? r.schedules : [];
+
+        if (schedules.length === 0){
+          items.push({
+            room_name: roomName, location, capacity,
+            start: null, end: null, title: '', organizer: '', invitados: '',
+            attendees_count: 0, active: true,
+          });
+        } else {
+          for (const s of schedules){
+            items.push({
+              room_name: roomName, location, capacity,
+              start: parseApiDate(s?.initial_date || s?.start),
+              end:   parseApiDate(s?.end_date     || s?.end),
+              title: asText(s?.title || ''),
+              organizer: asText(s?.user?.name || s?.organizer || ''),
+              invitados: '',
+              attendees_count: 0,
+              active: true,
+            });
+          }
+        }
+      }
+      return aggregateReservations(items);
+    }
+
+    function asText(v){
+      if (v == null) return '';
+      if (typeof v === 'string' || typeof v === 'number') return String(v);
+      if (Array.isArray(v)) return v.map(asText).filter(Boolean).join(', ');
+      if (typeof v === 'object') {
+        if ('name' in v) return asText(v.name);
+        if ('title' in v) return asText(v.title);
+      }
+      return '';
+    }
+    function deriveLocationFromName(name){
+      if(!name) return '';
+      const m = /piso\s*([0-9]+)/i.exec(String(name));
+      return m ? `Piso ${m[1]}` : '';
+    }
+    function parseApiDate(v){ if (!v) return null; const t = Date.parse(String(v).trim()); return Number.isNaN(t) ? null : new Date(t); }
+    function countEmails(s){ if(!s) return 0; const t=s.trim().replace(/,+$/,''); if(!t) return 0; return t.split(',').filter(x=>x.trim()).length; }
+    function hashCode(str){ let h=0; for(let i=0;i<str.length;i++){ h=(h<<5)-h+str.charCodeAt(i)|0; } return Math.abs(h); }
+
+    function aggregateReservations(items){
+      const now = Date.now();
+      const byRoom = new Map();
+
+      for (const it of items){
+        if (it.active === false) continue;
+        const key = it.room_name || "(sin sala)";
+
+        if(!byRoom.has(key)) byRoom.set(key, {
+          room_id: hashCode(key), room_name: key, location: it.location || "",
+          capacity: Number(it.capacity) || 0,
+          status: "Available", start_time: "", end_time: "",
+          attendees_count: 0, meeting_title: "", organizer: "", notes: "",
+          last_updated: new Date().toISOString(), all_slots:[]
+        });
+
+        const r = byRoom.get(key);
+        if (!r.capacity && Number(it.capacity) > 0) r.capacity = Number(it.capacity);
+
+        if (it.start){
+          const attendees = (countEmails(it.invitados) + (it.organizer?1:0));
+          r.all_slots.push({
+            start: it.start.toISOString(),
+            end:   it.end ? it.end.toISOString() : "",
+            title: it.title || "",
+            ymd:   ymd(it.start),
+            organizer: it.organizer || "",
+            attendees
+          });
+        }
+
+        const inProgress = it.start && it.end && (it.start.getTime() <= now && now <= it.end.getTime());
+        const soon = it.start && it.start.getTime() > now && (it.start.getTime() - now) <= 30*60*1000;
+
+        if (inProgress){
+          r.status = "Reserved";
+          r.start_time = it.start.toISOString();
+          r.end_time   = it.end ? it.end.toISOString() : "";
+          r.attendees_count = (countEmails(it.invitados) + (it.organizer?1:0));
+          r.meeting_title = it.title || "Reserva";
+          r.organizer = it.organizer || "";
+        } else if (r.status!=="Reserved" && soon){
+          r.start_time = it.start.toISOString();
+          r.end_time   = it.end ? it.end.toISOString() : "";
+          r.meeting_title = it.title || "Próxima reserva";
+          r.organizer = it.organizer || "";
+          r.attendees_count = (countEmails(it.invitados) + (it.organizer?1:0));
+        }
+      }
+
+      for (const r of byRoom.values()) r.all_slots.sort((a,b)=> Date.parse(a.start) - Date.parse(b.start));
+      return Array.from(byRoom.values());
+    }
+
+    /* ===== Render ===== */
+    function render(){
+      if (VIEW_DATE < TODAY) VIEW_DATE = new Date(TODAY);
+
+      const loc = locationFilter.value;
+      const viewY = ymd(VIEW_DATE);
+      const isTodayView = (ymd(new Date()) === viewY);
+      const nowMs = Date.now();
+
+      const items = (loc? ROOMS.filter(r=>r.location===loc): ROOMS)
+        .slice().sort((a,b)=> a.room_name.localeCompare(b.room_name));
+
+      const frag = document.createDocumentFragment();
+
+      items.forEach(r=>{
+        const card = document.createElement('article'); card.className = 'card';
+
+        let slotsForDay = (r.all_slots||[]).filter(s => s.ymd === viewY);
+        let nextSlotsForDay = [...slotsForDay].sort((a,b) => Date.parse(a.start) - Date.parse(b.start));
+
+        /* Línea principal: Nombre — horario (Actual/Próx o primera del día) */
+        let timeText = '—';
+        if (isTodayView) {
+          const current = nextSlotsForDay.find(s => {
+            const st = Date.parse(s.start), en = s.end ? Date.parse(s.end) : st;
+            return st <= nowMs && nowMs <= en;
+          });
+          if (current) {
+            const who = current.organizer ? `${current.organizer} — ` : '';
+            timeText = `Actual: ${who}${fmtRange(current.start, current.end)}`;
+          } else {
+            const next = nextSlotsForDay.find(s => Date.parse(s.start) > nowMs);
+            if (next) {
+              const who = next.organizer ? `${next.organizer} — ` : '';
+              timeText = `Próx: ${who}${fmtRange(next.start, next.end)}`;
+            }
+          }
+        } else {
+          if (nextSlotsForDay.length) {
+            const first = nextSlotsForDay[0];
+            const who = first.organizer ? `${first.organizer} — ` : '';
+            timeText = `${who}${fmtRange(first.start, first.end)}`;
+          }
+        }
+        const timeLine = el('div','time', timeText);
+
+        /* Mini agenda: TODAS las siguientes reservas del día (con scroll interno) */
+        let agendaLines = [];
+        if (nextSlotsForDay.length) {
+          if (isTodayView) {
+            const rest = nextSlotsForDay.filter(s => Date.parse(s.start) > nowMs);
+            agendaLines = rest.map(s => {
+              const who = s.organizer ? `${s.organizer} — ` : '';
+              return `${who}${fmtRange(s.start, s.end)}`;
+            });
+          } else {
+            const rest = nextSlotsForDay.slice(1); // todas menos la primera ya mostrada arriba
+            agendaLines = rest.map(s => {
+              const who = s.organizer ? `${s.organizer} — ` : '';
+              return `${who}${fmtRange(s.start, s.end)}`;
+            });
+          }
+        }
+        let agendaEl = null;
+        if (agendaLines.length) {
+          agendaEl = document.createElement('div'); agendaEl.className = 'agenda';
+          agendaLines.forEach(line => {
+            const li = document.createElement('div'); li.textContent = line; agendaEl.appendChild(li);
+          });
+        }
+
+        /* Estado y badge */
+        let barClass = 'status-ok';
+        let badgeText = 'Libre';
+        if (isTodayView){
+          const soon = isSoon(r.start_time, nowMs);
+          barClass = (r.status==='Reserved' ? 'status-busy' : (soon?'status-warn':'status-ok'));
+          badgeText = (r.status==='Reserved' ? 'Reservada' : (soon?'Comienza pronto':'Libre'));
+        }else{
+          const hasSlots = slotsForDay.length > 0;
+          barClass = hasSlots ? 'status-info' : 'status-ok';
+          badgeText = hasSlots ? 'Con reservas' : 'Libre';
+        }
+
+        const bar = document.createElement('div'); bar.className = 'statusBar '+barClass; card.appendChild(bar);
+        const badge = document.createElement('div'); badge.className='busy-badge'; badge.textContent = badgeText; card.appendChild(badge);
+
+        const name = el('div','room-name', r.room_name || '—');
+        const locLine = el('div','location', r.location || '—');
+        const meta = el('div','meta');
+        meta.innerHTML = `<span>Cap: <b>${r.capacity||'—'}</b></span>` +
+          (isTodayView && r.status==='Reserved'
+            ? ` · <span>Asistentes: <b>${r.attendees_count||0}</b></span>` +
+              (r.organizer ? ` · <span>Org: <b>${escapeHtml(r.organizer)}</b></span>` : '')
+            : '');
+
+        card.append(name, locLine, timeLine);
+        if (agendaEl) card.appendChild(agendaEl);
+        card.appendChild(meta);
+
+        card.addEventListener('click', ()=> openDetail(r));
+        frag.appendChild(card);
+      });
+
+      grid.replaceChildren(frag);
+
+      const uniques = Array.from(new Set(ROOMS.map(r=>r.location).filter(Boolean))).sort();
+      const current = locationFilter.value;
+      locationFilter.replaceChildren(new Option('Todos los pisos',''));
+      uniques.forEach(u=> locationFilter.add(new Option(u,u)));
+      locationFilter.value = current;
+
+      lastUpdatedEl.textContent = new Date().toLocaleString();
+      viewDateLabel.textContent = new Date(VIEW_DATE).toLocaleDateString();
+      datePicker.value = ymd(VIEW_DATE);
+      datePicker.min = ymd(TODAY);
+    }
+
+    function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+    function isSoon(startISO, nowMs){ if(!startISO) return false; const t = Date.parse(startISO); if(Number.isNaN(t)) return false; const diff = t - nowMs; return diff>0 && diff <= 30*60*1000; }
+    function fmtRange(startISO, endISO){
+      const s = startISO? new Date(startISO): null; const e = endISO? new Date(endISO): null;
+      if(!s) return '—'; const opts = {hour:'2-digit', minute:'2-digit'};
+      const sd = s.toLocaleTimeString([], opts); const ed = e? e.toLocaleTimeString([], opts): '';
+      return ed? `${sd} – ${ed}` : sd;
+    }
+
+    /* Modal */
+    const modal = document.getElementById('modal');
+    const closeModalBtn = document.getElementById('closeModal');
+
+    function openDetail(r, slotOrNull=null){
+      const viewY = ymd(VIEW_DATE);
+      let slotsForDay = (r.all_slots||[]).filter(s => s.ymd === viewY);
+
+      document.getElementById('mRoom').textContent = r.room_name || '—';
+
+      if (slotOrNull){
+        document.getElementById('mStatusLine').textContent = ymd(VIEW_DATE) === ymd(new Date()) ? 'Reserva de hoy' : 'Reserva programada';
+        document.getElementById('mLocation').textContent = r.location||'—';
+        document.getElementById('mCapacity').textContent = r.capacity||'—';
+        document.getElementById('mTitle').textContent = slotOrNull.title || 'Reserva';
+        document.getElementById('mTime').textContent = fmtRange(slotOrNull.start, slotOrNull.end);
+        document.getElementById('mAttendees').textContent = (slotOrNull.attendees!=null? slotOrNull.attendees: '—');
+        document.getElementById('mOrganizer').textContent = slotOrNull.organizer || '—';
+      }else{
+        let statusLine = r.status==='Reserved' ? 'Reservada' : (slotsForDay.length ? 'Con reservas' : 'Libre');
+        document.getElementById('mStatusLine').textContent = statusLine;
+
+        document.getElementById('mLocation').textContent = r.location||'—';
+        document.getElementById('mCapacity').textContent = r.capacity||'—';
+        document.getElementById('mTitle').textContent = r.meeting_title||'—';
+
+        if (slotsForDay.length){
+          const first = [...slotsForDay].sort((a,b)=> Date.parse(a.start) - Date.parse(b.start))[0];
+          document.getElementById('mTime').textContent = fmtRange(first.start, first.end);
+          document.getElementById('mOrganizer').textContent = first.organizer || '—';
+        }else{
+          document.getElementById('mTime').textContent = (r.start_time? fmtRange(r.start_time, r.end_time): '—');
+          document.getElementById('mOrganizer').textContent = r.organizer||'—';
+        }
+
+        document.getElementById('mAttendees').textContent = (r.attendees_count!=null? r.attendees_count: '—');
+      }
+
+      document.getElementById('mNotes').textContent = r.notes||'—';
+      document.getElementById('mUpdated').textContent = r.last_updated? new Date(r.last_updated).toLocaleString(): '—';
+
+      document.getElementById('mDayLabel').textContent = new Date(VIEW_DATE).toLocaleDateString();
+      const listEl = document.getElementById('mDayList');
+      if (slotsForDay.length){
+        listEl.innerHTML = '';
+        slotsForDay.forEach(s=>{
+          const item = document.createElement('button');
+          item.className = 'slot';
+          item.innerHTML = `${fmtRange(s.start,s.end)}${s.title? ` · <b>${escapeHtml(s.title)}</b>`:''}` +
+            (s.organizer? ` · <i>${escapeHtml(s.organizer)}</i>`:'');
+          item.addEventListener('click', (e)=>{ e.stopPropagation(); openDetail(r, s); });
+          listEl.appendChild(item);
+        });
+      }else{
+        listEl.innerHTML = `<div class="slot">Sin reservas</div>`;
+      }
+
+      modal.classList.add('open');
+    }
+    closeModalBtn.addEventListener('click', ()=> modal.classList.remove('open'));
+    modal.addEventListener('click', (e)=>{ if(e.target===modal) modal.classList.remove('open'); });
+
+    /* Reloj y eventos */
+    setInterval(()=>{ clockEl.textContent = new Date().toLocaleTimeString(); }, 1000);
+    document.getElementById('refreshBtn').addEventListener('click', loadAndRender);
+    document.getElementById('fullscreenBtn').addEventListener('click', ()=>{ if(!document.fullscreenElement){ document.documentElement.requestFullscreen().catch(()=>{}); } else{ document.exitFullscreen().catch(()=>{}); } });
+
+    todayBtn.addEventListener('click', ()=>{ VIEW_DATE = new Date(TODAY); loadAndRender(); });
+    tomorrowBtn.addEventListener('click', ()=>{ const d=new Date(TODAY); d.setDate(d.getDate()+1); VIEW_DATE = d; loadAndRender(); });
+    datePicker.addEventListener('change', ()=>{ if(datePicker.value){ let d = startOfDay(new Date(datePicker.value+"T00:00:00")); if (d < TODAY) d = new Date(TODAY); VIEW_DATE = d; loadAndRender(); } });
+
+    intervalLabel.textContent = (AUTO_REFRESH_MS/1000)+'s';
+    let timer = null;
+    async function loadAndRender(){
+      try{
+        const data = await fetchData();
+        ROOMS = normalize(data);
+        render();
+      }catch(err){ console.error(err); }
+    }
+    function normalize(arr){
+      return arr.map(x=>({
+        room_id: num(x.room_id), room_name: str(x.room_name), location: str(x.location),
+        capacity: num(x.capacity),
+        status: (str(x.status)||'').toLowerCase()==='reserved'? 'Reserved':'Available',
+        start_time: str(x.start_time), end_time: str(x.end_time),
+        attendees_count: num(x.attendees_count), meeting_title: str(x.meeting_title),
+        organizer: str(x.organizer), notes: str(x.notes), last_updated: str(x.last_updated),
+        all_slots: Array.isArray(x.all_slots) ? x.all_slots.map(s=>({
+          start:str(s.start), end:str(s.end), title:str(s.title), ymd:str(s.ymd),
+          organizer:str(s.organizer), attendees:num(s.attendees)
+        })) : [],
+      }));
+    }
+    const num = v=> (v==null||v==='')? 0 : Number(v);
+    const str = v=> (v==null)? '' : String(v);
+
+    function schedule(){ if(timer) clearInterval(timer); timer = setInterval(loadAndRender, AUTO_REFRESH_MS); }
+
+    // Init
+    datePicker.min = ymd(TODAY);
+    datePicker.value = ymd(VIEW_DATE);
+    loadAndRender();
+    schedule();
+    setInterval(render, 30_000);
+    locationFilter.addEventListener('change', render);
+  </script>
+
+  <!-- Escalado fijo -->
+  <script>
+    const BASE_W = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--stage-w'));
+    const BASE_H = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--stage-h'));
+    const stage  = document.getElementById('stage');
+    function fitStage(){ const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H); stage.style.transform = `scale(${s})`; }
+    window.addEventListener('resize', fitStage); fitStage();
+  </script>
+</body>
+</html>
+
