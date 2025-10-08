@@ -8,33 +8,43 @@
     :root{
       --ok:#22c55e; --busy:#ef4444; --warn:#f59e0b;
       --bg:#0b1020; --card:#11162a; --card2:#0e1428; --text:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa;
-      --stage-w: 1280px; --stage-h: 800px;
-      --card-h: 210px;              /* altura fija para alinear la grilla */
+      --card-h: clamp(180px, 26vh, 230px);
       --radius-lg: 16px;
     }
 
     html,body{height:100%}
-    body{margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Inter,Arial,sans-serif; overflow:hidden}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Inter,Arial,sans-serif;
+      overflow:hidden;
+    }
 
-    /* Escenario */
-    #stageOuter{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); overflow:hidden}
-    #stage{width:var(--stage-w); height:var(--stage-h); position:relative; display:flex; flex-direction:column; gap:16px; padding:16px; transform-origin: top left; box-sizing: border-box}
+    /* Escenario (full viewport, sin escala fija) */
+    #stageOuter{
+      position:fixed; inset:0; display:flex; align-items:stretch; justify-content:center;
+      background:var(--bg); overflow:hidden;
+    }
+    #stage{
+      width:100vw; height:100vh;
+      position:relative; display:flex; flex-direction:column; gap:16px; padding:16px;
+      box-sizing:border-box;
+    }
 
     /* Header */
-    header{display:flex; gap:16px; align-items:center; justify-content:space-between}
+    header{display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap}
     .brand{display:flex; align-items:center; gap:12px}
     .brand h1{font-size:clamp(18px,3.2vw,28px); margin:0; font-weight:800; letter-spacing:.2px}
     .legend{display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:14px; color:var(--muted)}
     .tag{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#172033; border:1px solid #233054}
     .dot{width:10px; height:10px; border-radius:999px}
     .dot.ok{background:var(--ok)} .dot.busy{background:var(--busy)} .dot.warn{background:var(--warn)}
-    .controls{display:flex; gap:8px; align-items:center}
+    .controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
     button, select, input[type="date"]{
       background:#172033; color:var(--text); border:1px solid #233054; border-radius:10px; padding:8px 12px; cursor:pointer; font-size:14px
     }
     button:hover{filter:brightness(1.08)}
 
-    /* Grid */
+    /* Grid (responsiva) */
     .grid{
       display:grid;
       grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
@@ -66,14 +76,14 @@
     .agenda{
       margin-top:4px; font-size:12px; color:var(--muted);
       display:flex; flex-direction:column; gap:3px;
-      max-height:72px; overflow:auto; padding-right:4px;   /* muestra TODO con scroll sin desalinear */
+      max-height:72px; overflow:auto; padding-right:4px;
     }
     .agenda::-webkit-scrollbar{height:8px;width:8px} .agenda::-webkit-scrollbar-thumb{background:#2a3556;border-radius:8px}
 
     .meta{margin-top:auto; display:flex; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--muted)}
     .meta b{color:var(--text)}
 
-    footer{display:flex; justify-content:space-between; align-items:center; gap:10px; color:var(--muted); font-size:13px}
+    footer{display:flex; justify-content:space-between; align-items:center; gap:10px; color:var(--muted); font-size:13px; flex-wrap:wrap}
 
     /* Modal */
     .modal{position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; padding:16px; z-index:10000}
@@ -84,6 +94,12 @@
     .kv{display:grid; grid-template-columns:150px 1fr; gap:8px; margin-top:10px; font-size:14px}
     .actions{display:flex; justify-content:flex-end; margin-top:14px}
     ::-webkit-scrollbar{height:10px;width:10px} ::-webkit-scrollbar-thumb{background:#253052;border-radius:10px}
+
+    @media (max-width: 420px){
+      .grid{ grid-template-columns: 1fr; }
+      .kv{ grid-template-columns: 1fr; }
+      .room-name{ font-size:16px; }
+    }
   </style>
 </head>
 <body>
@@ -167,6 +183,12 @@
     function ymd(d){ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`; }
     function escapeHtml(s=''){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
+    function dayBounds(d){
+      const s = new Date(d); s.setHours(0,0,0,0);
+      const e = new Date(s); e.setDate(e.getDate()+1);
+      return [s.getTime(), e.getTime()];
+    }
+
     /* ===== Fetch (por día) ===== */
     async function fetchData(){
       const dateStr = ymd(VIEW_DATE);
@@ -230,7 +252,46 @@
       const m = /piso\s*([0-9]+)/i.exec(String(name));
       return m ? `Piso ${m[1]}` : '';
     }
-    function parseApiDate(v){ if (!v) return null; const t = Date.parse(String(v).trim()); return Number.isNaN(t) ? null : new Date(t); }
+
+    // === NUEVO: parseo robusto de fechas ===
+    function parseApiDate(v){
+      if (!v) return null;
+      let s = String(v).trim();
+
+      // 1) "YYYY-MM-DD HH:mm" o "YYYY-MM-DD HH:mm:ss" (hora 1-2 dígitos)
+      const spaceFmt = /^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
+      const m = spaceFmt.exec(s);
+      if (m) {
+        const day = m[1];
+        const hh  = m[2].padStart(2, '0');
+        const mm  = m[3];
+        const ss  = (m[4] || '00').padStart(2, '0');
+        s = `${day}T${hh}:${mm}:${ss}`;
+      }
+
+      // 2) "YYYY-MM-DDTHH:mm" sin segundos
+      const tNoSec = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/;
+      if (tNoSec.test(s)) s = s + ':00';
+
+      // 3) Parse estándar
+      let t = Date.parse(s);
+
+      // 4) Solo fecha (YYYY-MM-DD)
+      if (Number.isNaN(t)) {
+        const onlyDay = /^(\d{4}-\d{2}-\d{2})$/.exec(s);
+        if (onlyDay) {
+          const d = new Date(onlyDay[1] + 'T00:00:00');
+          t = d.getTime();
+        }
+      }
+
+      if (Number.isNaN(t)) {
+        console.warn('Fecha no reconocida por parseApiDate:', v);
+        return null;
+      }
+      return new Date(t);
+    }
+
     function countEmails(s){ if(!s) return 0; const t=s.trim().replace(/,+$/,''); if(!t) return 0; return t.split(',').filter(x=>x.trim()).length; }
     function hashCode(str){ let h=0; for(let i=0;i<str.length;i++){ h=(h<<5)-h+str.charCodeAt(i)|0; } return Math.abs(h); }
 
@@ -259,7 +320,7 @@
             start: it.start.toISOString(),
             end:   it.end ? it.end.toISOString() : "",
             title: it.title || "",
-            ymd:   ymd(it.start),
+            ymd:   ymd(it.start),            // ya no dependemos de esto para filtrar
             organizer: it.organizer || "",
             attendees
           });
@@ -296,6 +357,7 @@
       const viewY = ymd(VIEW_DATE);
       const isTodayView = (ymd(new Date()) === viewY);
       const nowMs = Date.now();
+      const [dayStartMs, dayEndMs] = dayBounds(VIEW_DATE);
 
       const items = (loc? ROOMS.filter(r=>r.location===loc): ROOMS)
         .slice().sort((a,b)=> a.room_name.localeCompare(b.room_name));
@@ -305,7 +367,12 @@
       items.forEach(r=>{
         const card = document.createElement('article'); card.className = 'card';
 
-        let slotsForDay = (r.all_slots||[]).filter(s => s.ymd === viewY);
+        // NUEVO: filtra por rango del día local
+        let slotsForDay = (r.all_slots||[]).filter(s => {
+          const ms = Date.parse(s.start);
+          return !Number.isNaN(ms) && ms >= dayStartMs && ms < dayEndMs;
+        });
+
         let nextSlotsForDay = [...slotsForDay].sort((a,b) => Date.parse(a.start) - Date.parse(b.start));
 
         /* Línea principal: Nombre — horario (Actual/Próx o primera del día) */
@@ -334,7 +401,7 @@
         }
         const timeLine = el('div','time', timeText);
 
-        /* Mini agenda: TODAS las siguientes reservas del día (con scroll interno) */
+        /* Mini agenda */
         let agendaLines = [];
         if (nextSlotsForDay.length) {
           if (isTodayView) {
@@ -420,8 +487,11 @@
     const closeModalBtn = document.getElementById('closeModal');
 
     function openDetail(r, slotOrNull=null){
-      const viewY = ymd(VIEW_DATE);
-      let slotsForDay = (r.all_slots||[]).filter(s => s.ymd === viewY);
+      const [dayStartMs, dayEndMs] = dayBounds(VIEW_DATE);
+      let slotsForDay = (r.all_slots||[]).filter(s => {
+        const ms = Date.parse(s.start);
+        return !Number.isNaN(ms) && ms >= dayStartMs && ms < dayEndMs;
+      });
 
       document.getElementById('mRoom').textContent = r.room_name || '—';
 
@@ -523,14 +593,8 @@
     locationFilter.addEventListener('change', render);
   </script>
 
-  <!-- Escalado fijo -->
-  <script>
-    const BASE_W = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--stage-w'));
-    const BASE_H = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--stage-h'));
-    const stage  = document.getElementById('stage');
-    function fitStage(){ const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H); stage.style.transform = `scale(${s})`; }
-    window.addEventListener('resize', fitStage); fitStage();
-  </script>
+  <!-- (Sin “Escalado fijo”: todo es 100% responsive) -->
 </body>
 </html>
+
 
