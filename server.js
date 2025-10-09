@@ -13,27 +13,7 @@ const PORT = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// === BASIC AUTH ===
-function basicAuth(req, res, next) {
-  const auth = req.headers.authorization || "";
-  const [scheme, encoded] = auth.split(" ");
-  if (scheme !== "Basic" || !encoded) {
-    res.set("WWW-Authenticate", 'Basic realm="Kiosco Caballeriza"');
-    return res.status(401).send("Autenticación requerida");
-  }
 
-  const [user, pass] = Buffer.from(encoded, "base64").toString().split(":");
-
-  if (user === process.env.BASIC_USER && pass === process.env.BASIC_PASS) {
-    return next();
-  }
-
-  res.set("WWW-Authenticate", 'Basic realm="Kiosco Caballeriza"');
-  return res.status(401).send("No autorizado");
-}
-
-// aplica el middleware a toda la app
-app.use(basicAuth);
 
 
 // Sirve archivos estáticos desde /public
@@ -81,4 +61,5 @@ app.get('/api/escritoir/dashboard', async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`);
 });
+
 
